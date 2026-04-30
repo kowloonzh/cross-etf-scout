@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cross-etf-scout"
+version = "0.1.0"
+description = "Identify unusual cross-border ETF moves using recent premium and price momentum."
+requires-python = ">=3.10"
+dependencies = [
+  "pandas>=2.0",
+  "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+cross-etf-scout = "cross_etf_scout.cli:main"
+ces = "cross_etf_scout.cli:main"
+cross-etf-notify = "cross_etf_scout.notifications:notify_main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

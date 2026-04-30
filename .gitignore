@@ -1,0 +1,29 @@
+# Local runtime configuration
+config/config.yaml
+.env
+.env.*
+.codex
+chat-notes.md
+docs/superpowers/
+
+# Runtime data and generated reports
+data/
+logs/
+
+# Python caches and test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Packaging and virtual environments
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# OS/editor noise
+.DS_Store
+*.swp

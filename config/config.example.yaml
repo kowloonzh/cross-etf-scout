@@ -1,0 +1,20 @@
+notifications:
+  workwechat:
+    enabled: false
+    env_file: ".env"
+    corp_id_env: "WORKWECHAT_CORP_ID"
+    corp_secret_env: "WORKWECHAT_CORP_SECRET"
+    agent_id_env: "WORKWECHAT_AGENT_ID"
+    user_ids: []
+    department_ids: []
+    tag_ids: []
+  telegram:
+    enabled: false
+    source: env
+    env_file: ".env"
+    bot_token_env: "TELEGRAM_BOT_TOKEN"
+    chat_id_env: "TELEGRAM_CHAT_ID"
+    parse_mode: "HTML"
+
+focus_etfs:
+  - "513310"
