@@ -96,7 +96,11 @@ while [ "$attempt" -le "$MAX_ATTEMPTS" ]; do
     --batch-size "${CES_COLLECT_BATCH_SIZE:-5}" \
     --request-timeout "${CES_COLLECT_REQUEST_TIMEOUT:-30}" \
     --retries "${CES_COLLECT_RETRIES:-2}" \
-    --retry-delay "${CES_COLLECT_RETRY_DELAY:-1}"
+    --retry-delay "${CES_COLLECT_RETRY_DELAY:-1}" \
+    --ensure-browser \
+    --restart-container-on-timeout "${CES_HEADLESS_CONTAINER_NAME:-headless-shell}" \
+    --headless-image "${CES_HEADLESS_IMAGE:-chromedp/headless-shell}" \
+    --headless-host-port "${CES_HEADLESS_HOST_PORT:-9222}"
 
   active_count="$(sqlite3 "$DB_PATH" "select count(*) from etfs where active=1;")"
   quote_count="$(sqlite3 "$DB_PATH" "select count(*) from daily_quotes where trade_date='$TRADE_DATE';")"

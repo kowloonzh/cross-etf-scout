@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import argparse
 import subprocess
+import time
+import urllib.error
+import urllib.request
 from datetime import date
 from pathlib import Path
 
@@ -26,7 +29,7 @@ from cross_etf_scout.storage import (
     replace_daily_signals,
     upsert_daily_quote,
 )
-from cross_etf_scout.xueqiu import DEFAULT_CHROME_REMOTE_URL, fetch_stocks
+from cross_etf_scout.xueqiu import DEFAULT_CHROME_REMOTE_URL, fetch_stock, fetch_stocks
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -110,6 +113,9 @@ def _build_parser() -> argparse.ArgumentParser:
     collect_parser.add_argument("--retry-delay", type=float, default=1.0)
     collect_parser.add_argument("--restart-container-on-timeout", default="headless-shell")
     collect_parser.add_argument("--no-restart-on-timeout", action="store_true")
+    collect_parser.add_argument("--ensure-browser", action="store_true")
+    collect_parser.add_argument("--headless-image", default="chromedp/headless-shell")
+    collect_parser.add_argument("--headless-host-port", default="9222")
     collect_parser.add_argument("--force", action="store_true")
 
     report_parser = subparsers.add_parser("report")
@@ -134,6 +140,9 @@ def _collect(args: argparse.Namespace, db_path: Path) -> int:
     if not etfs:
         print("ETF universe is empty. Run ces import-etfs first.")
         return 1
+
+    if args.ensure_browser and not _ensure_browser(args):
+        print("Browser dependency is unavailable; continuing collection attempt.")
 
     successes = 0
     failures: list[tuple[str, str]] = []
@@ -218,6 +227,79 @@ def _restart_container(container_name: str) -> bool:
     return True
 
 
+def _ensure_browser(args: argparse.Namespace) -> bool:
+    if _is_chrome_remote_ready(args.chrome_remote_url):
+        return True
+
+    if not _restart_or_start_container(
+        args.restart_container_on_timeout,
+        args.headless_image,
+        args.headless_host_port,
+    ):
+        return False
+
+    for _ in range(10):
+        time.sleep(1)
+        if _is_chrome_remote_ready(args.chrome_remote_url):
+            print(
+                "Started container for browser dependency: "
+                f"{args.restart_container_on_timeout}"
+            )
+            return True
+    return False
+
+
+def _is_chrome_remote_ready(chrome_remote_url: str) -> bool:
+    url = f"{chrome_remote_url.rstrip('/')}/json/version"
+    try:
+        with urllib.request.urlopen(url, timeout=3) as response:
+            return 200 <= response.status < 300
+    except (OSError, urllib.error.URLError):
+        return False
+
+
+def _restart_or_start_container(
+    container_name: str,
+    image: str,
+    host_port: str,
+) -> bool:
+    try:
+        result = subprocess.run(
+            [
+                "docker",
+                "ps",
+                "-a",
+                "--filter",
+                f"name=^/{container_name}$",
+                "--format",
+                "{{.Names}}",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        if container_name in result.stdout.splitlines():
+            return _restart_container(container_name)
+        subprocess.run(
+            [
+                "docker",
+                "run",
+                "-d",
+                "-p",
+                f"{host_port}:9222",
+                "--rm",
+                "--name",
+                container_name,
+                image,
+            ],
+            check=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+        print(f"Failed to start container {container_name}: {exc}")
+        return False
+    return True
+
+
 def _collect_one_by_one(
     args: argparse.Namespace,
     batch: list[str],
@@ -226,7 +308,7 @@ def _collect_one_by_one(
     quotes: list[dict] = []
     for symbol in batch:
         try:
-            quotes.extend(_fetch_batch(args, [symbol]))
+            quotes.append(_fetch_single(args, symbol))
         except (
             subprocess.CalledProcessError,
             subprocess.TimeoutExpired,
@@ -235,6 +317,16 @@ def _collect_one_by_one(
         ) as exc:
             failures.append((symbol, str(exc)))
     return quotes
+
+
+def _fetch_single(args: argparse.Namespace, symbol: str) -> dict:
+    return fetch_stock(
+        symbol,
+        chrome_remote_url=args.chrome_remote_url,
+        timeout_seconds=args.request_timeout,
+        retries=args.retries,
+        retry_delay_seconds=args.retry_delay,
+    )
 
 
 def _chunks(values: list[str], size: int) -> list[list[str]]:
