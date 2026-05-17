@@ -62,6 +62,45 @@ send_failure_notification() {
     --message "$summary" || true
 }
 
+is_weekend() {
+  local day_of_week
+  day_of_week="$(TZ=Asia/Shanghai date -d "$TRADE_DATE" +%u)"
+  [ "$day_of_week" = "6" ] || [ "$day_of_week" = "7" ]
+}
+
+latest_complete_trade_date() {
+  sqlite3 "$DB_PATH" "
+    with active as (
+      select count(*) as active_count from etfs where active = 1
+    ),
+    complete_dates as (
+      select trade_date
+      from daily_quotes, active
+      where trade_date <= '$TRADE_DATE'
+      group by trade_date
+      having count(*) = active.active_count
+    )
+    select coalesce(max(trade_date), '') from complete_dates;
+  "
+}
+
+exit_if_weekend_data_is_stale() {
+  local active_count="$1"
+  local quote_count="$2"
+  local latest_date
+
+  if [ "$active_count" = "0" ] || [ "$quote_count" != "0" ] || ! is_weekend; then
+    return 1
+  fi
+
+  latest_date="$(latest_complete_trade_date)"
+  if [ -n "$latest_date" ] && [ "$latest_date" != "$TRADE_DATE" ]; then
+    echo "[$(TZ=Asia/Shanghai date '+%F %T %Z')] market data not updated for $TRADE_DATE; latest_complete_trade_date=$latest_date"
+    return 0
+  fi
+  return 1
+}
+
 echo "[$(TZ=Asia/Shanghai date '+%F %T %Z')] collect_until_complete start trade_date=$TRADE_DATE"
 
 cd "$ROOT_DIR" || exit 1
@@ -91,6 +130,10 @@ while [ "$attempt" -le "$MAX_ATTEMPTS" ]; do
     exit 0
   fi
 
+  if exit_if_weekend_data_is_stale "$active_count" "$quote_count"; then
+    exit 0
+  fi
+
   PYTHONPATH=src python3 -m cross_etf_scout.cli collect \
     --date "$TRADE_DATE" \
     --batch-size "${CES_COLLECT_BATCH_SIZE:-5}" \
@@ -106,6 +149,10 @@ while [ "$attempt" -le "$MAX_ATTEMPTS" ]; do
   quote_count="$(sqlite3 "$DB_PATH" "select count(*) from daily_quotes where trade_date='$TRADE_DATE';")"
 
   echo "[$(TZ=Asia/Shanghai date '+%F %T %Z')] after collect active=$active_count quotes=$quote_count"
+
+  if exit_if_weekend_data_is_stale "$active_count" "$quote_count"; then
+    exit 0
+  fi
 
   if [ "$active_count" != "0" ] && [ "$quote_count" = "$active_count" ]; then
     echo "[$(TZ=Asia/Shanghai date '+%F %T %Z')] collection complete"

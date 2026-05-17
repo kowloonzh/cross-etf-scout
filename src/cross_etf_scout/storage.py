@@ -48,6 +48,7 @@ def init_db(db_path: str | Path = DEFAULT_DB_PATH) -> None:
                 volume real,
                 market_capital real,
                 source_timestamp text,
+                nav_date text,
                 collected_at text not null,
                 primary key (trade_date, symbol),
                 foreign key (symbol) references etfs(symbol)
@@ -75,6 +76,7 @@ def init_db(db_path: str | Path = DEFAULT_DB_PATH) -> None:
             );
             """
         )
+        _ensure_column(conn, "daily_quotes", "nav_date", "text")
 
 
 def import_etfs(
@@ -137,6 +139,7 @@ def upsert_daily_quote(
         "volume": quote.get("volume"),
         "market_capital": quote.get("market_capital"),
         "source_timestamp": quote.get("source_timestamp"),
+        "nav_date": quote.get("nav_date"),
         "collected_at": quote.get("collected_at") or _now_iso(),
     }
     with connect(db_path) as conn:
@@ -144,12 +147,13 @@ def upsert_daily_quote(
             """
             insert into daily_quotes (
                 trade_date, symbol, name, current, percent, premium_rate, unit_nav,
-                iopv, amount, volume, market_capital, source_timestamp, collected_at
+                iopv, amount, volume, market_capital, source_timestamp, nav_date,
+                collected_at
             )
             values (
                 :trade_date, :symbol, :name, :current, :percent, :premium_rate,
                 :unit_nav, :iopv, :amount, :volume, :market_capital,
-                :source_timestamp, :collected_at
+                :source_timestamp, :nav_date, :collected_at
             )
             on conflict(trade_date, symbol) do update set
                 name = excluded.name,
@@ -162,6 +166,7 @@ def upsert_daily_quote(
                 volume = excluded.volume,
                 market_capital = excluded.market_capital,
                 source_timestamp = excluded.source_timestamp,
+                nav_date = excluded.nav_date,
                 collected_at = excluded.collected_at
             """,
             data,
@@ -246,6 +251,20 @@ def load_signals(
 
 def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
     return dict(row)
+
+
+def _ensure_column(
+    conn: sqlite3.Connection,
+    table_name: str,
+    column_name: str,
+    column_type: str,
+) -> None:
+    columns = {
+        row["name"]
+        for row in conn.execute(f"pragma table_info({table_name})").fetchall()
+    }
+    if column_name not in columns:
+        conn.execute(f"alter table {table_name} add column {column_name} {column_type}")
 
 
 def _signal_to_dict(signal: Any) -> dict[str, Any]:

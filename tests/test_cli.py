@@ -4,7 +4,7 @@ import csv
 import subprocess
 
 from cross_etf_scout.cli import main
-from cross_etf_scout.storage import import_etfs, init_db, upsert_daily_quote
+from cross_etf_scout.storage import import_etfs, init_db, load_quotes, upsert_daily_quote
 
 
 def test_cli_init_db_and_import_etfs(tmp_path, capsys):
@@ -117,6 +117,60 @@ def test_cli_collect_uses_batch_fetch(tmp_path, monkeypatch, capsys):
 
     assert calls == [(["SH513310", "SZ159100"], "http://127.0.0.1:9222", 20, 3, 0.0)]
     assert "Collected 2 quotes, 0 failures." in capsys.readouterr().out
+
+
+def test_cli_collect_uses_source_trade_date_from_quote(tmp_path, monkeypatch):
+    db_path = tmp_path / "scout.sqlite"
+    csv_path = tmp_path / "cross_etf.csv"
+    with csv_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["证券代码", "交易所", "symbol", "证券名称"])
+        writer.writerow(["513310", "SH", "SH513310", "中韩半导体ETF华泰柏瑞"])
+    init_db(db_path)
+    import_etfs(csv_path, db_path)
+
+    def fake_fetch_stocks(
+        symbols, chrome_remote_url, timeout_seconds, retries, retry_delay_seconds
+    ):
+        return [
+            {
+                "symbol": symbols[0],
+                "name": symbols[0],
+                "trade_date": "2026-05-15",
+                "nav_date": "2026-05-14",
+                "current": 6.005,
+                "percent": -3.72,
+                "premium_rate": 35.94,
+                "unit_nav": 4.436,
+                "iopv": 4.4173,
+                "amount": 100.0,
+                "volume": 100.0,
+                "market_capital": 1000.0,
+                "source_timestamp": "1778828400000",
+            }
+        ]
+
+    monkeypatch.setattr("cross_etf_scout.cli.fetch_stocks", fake_fetch_stocks)
+
+    assert (
+        main(
+            [
+                "--db",
+                str(db_path),
+                "collect",
+                "--date",
+                "2026-05-17",
+                "--batch-size",
+                "1",
+            ]
+        )
+        == 0
+    )
+
+    assert load_quotes(db_path, trade_date="2026-05-17") == []
+    rows = load_quotes(db_path, trade_date="2026-05-15")
+    assert len(rows) == 1
+    assert rows[0]["nav_date"] == "2026-05-14"
 
 
 def test_cli_collect_skips_symbols_already_collected_for_date(tmp_path, monkeypatch, capsys):

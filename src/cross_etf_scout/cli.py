@@ -193,7 +193,7 @@ def _collect(args: argparse.Namespace, db_path: Path) -> int:
         for quote in quotes:
             symbol = quote["symbol"]
             returned_symbols.add(symbol)
-            quote["trade_date"] = args.date
+            quote["trade_date"] = quote.get("trade_date") or args.date
             if not quote.get("name"):
                 quote["name"] = names_by_symbol.get(symbol, symbol)
             upsert_daily_quote(db_path, quote)

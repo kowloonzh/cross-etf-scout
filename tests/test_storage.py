@@ -74,6 +74,7 @@ def test_upsert_daily_quote_replaces_same_symbol_and_date(tmp_path):
         "volume": 5000000.0,
         "market_capital": 2000000000.0,
         "source_timestamp": "2026-04-28T15:00:00+08:00",
+        "nav_date": "2026-04-27",
     }
     upsert_daily_quote(db_path, quote)
     upsert_daily_quote(db_path, {**quote, "current": 1.25, "premium_rate": 6.0})
@@ -82,6 +83,39 @@ def test_upsert_daily_quote_replaces_same_symbol_and_date(tmp_path):
     assert len(rows) == 1
     assert rows[0]["current"] == 1.25
     assert rows[0]["premium_rate"] == 6.0
+    assert rows[0]["nav_date"] == "2026-04-27"
+
+
+def test_init_db_adds_nav_date_to_existing_daily_quotes_table(tmp_path):
+    db_path = tmp_path / "legacy.sqlite"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            create table daily_quotes (
+                trade_date text not null,
+                symbol text not null,
+                name text not null,
+                current real,
+                percent real,
+                premium_rate real,
+                unit_nav real,
+                iopv real,
+                amount real,
+                volume real,
+                market_capital real,
+                source_timestamp text,
+                collected_at text not null,
+                primary key (trade_date, symbol)
+            )
+            """
+        )
+
+    init_db(db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        columns = [row[1] for row in conn.execute("pragma table_info(daily_quotes)")]
+    assert "nav_date" in columns
 
 
 def test_replace_daily_signals_replaces_existing_date(tmp_path):

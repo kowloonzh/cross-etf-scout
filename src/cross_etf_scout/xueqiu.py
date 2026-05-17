@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 import subprocess
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 
 DEFAULT_CHROME_REMOTE_URL = "http://127.0.0.1:9222"
+CN_TIMEZONE = timezone(timedelta(hours=8))
 
 
 def fetch_stock(
@@ -89,6 +91,8 @@ def normalize_stock_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "volume": _to_float(quote.get("volume")),
         "market_capital": _to_float(quote.get("market_capital")),
         "source_timestamp": _to_timestamp(quote),
+        "trade_date": _to_cn_date(_timestamp_value(quote)),
+        "nav_date": _to_cn_date(quote.get("nav_date")),
     }
 
 
@@ -112,7 +116,21 @@ def _to_float(value: Any) -> float | None:
 
 
 def _to_timestamp(quote: dict[str, Any]) -> str | None:
-    value = quote.get("timestamp") or quote.get("time") or quote.get("updated_at")
+    value = _timestamp_value(quote)
     if value is None:
         return None
     return str(value)
+
+
+def _timestamp_value(quote: dict[str, Any]) -> Any:
+    return quote.get("timestamp") or quote.get("time") or quote.get("updated_at")
+
+
+def _to_cn_date(value: Any) -> str | None:
+    if value is None or value == "":
+        return None
+    try:
+        millis = float(value)
+    except (TypeError, ValueError):
+        return None
+    return datetime.fromtimestamp(millis / 1000, CN_TIMEZONE).date().isoformat()

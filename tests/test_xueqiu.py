@@ -19,6 +19,7 @@ def test_normalize_stock_payload_accepts_top_level_quote_fields():
         "volume": 3063845711,
         "market_capital": 4200000000,
         "timestamp": 1777378800000,
+        "nav_date": 1777296000000,
     }
 
     quote = normalize_stock_payload(payload)
@@ -35,6 +36,8 @@ def test_normalize_stock_payload_accepts_top_level_quote_fields():
         "volume": 3063845711.0,
         "market_capital": 4200000000.0,
         "source_timestamp": "1777378800000",
+        "trade_date": "2026-04-28",
+        "nav_date": "2026-04-27",
     }
 
 
@@ -84,6 +87,7 @@ def test_normalize_stock_payload_accepts_nested_quote_output():
                 "current": 1.014,
                 "premium_rate": -0.49,
                 "timestamp": 1777359894000,
+                "nav_date": 1777296000000,
             }
         },
         "error_code": 0,
@@ -96,6 +100,8 @@ def test_normalize_stock_payload_accepts_nested_quote_output():
     assert quote["name"] == "港股通信息技术ETF鹏华"
     assert quote["current"] == 1.014
     assert quote["premium_rate"] == -0.49
+    assert quote["trade_date"] == "2026-04-28"
+    assert quote["nav_date"] == "2026-04-27"
 
 
 def test_fetch_stocks_calls_batch_command_and_normalizes_list(monkeypatch):
