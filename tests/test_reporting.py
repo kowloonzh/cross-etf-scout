@@ -9,6 +9,7 @@ from cross_etf_scout.reporting import (
     format_candidates,
     format_report,
     format_telegram_digest,
+    format_workwechat_digest,
 )
 
 
@@ -133,6 +134,36 @@ def test_format_telegram_digest_includes_configured_focus_etfs():
     assert "<code>SH513310</code> 中韩半导体ETF华泰柏瑞" in digest
     assert "现价 4.20 | 今日 +0.0% | 溢价 16.0%" in digest
     assert "状态: 极端过热" in digest
+
+
+def test_format_workwechat_digest_uses_plain_text_for_enterprise_wechat():
+    quotes = pd.DataFrame(
+        [
+            _quote("2026-04-24", "SH513310", "中韩半导体ETF华泰柏瑞", 3.60, 11.0, 500),
+            _quote("2026-04-25", "SH513310", "中韩半导体ETF华泰柏瑞", 3.75, 12.0, 650),
+            _quote("2026-04-26", "SH513310", "中韩半导体ETF华泰柏瑞", 3.90, 14.0, 800),
+            _quote("2026-04-27", "SH513310", "中韩半导体ETF华泰柏瑞", 4.05, 15.0, 900),
+            _quote("2026-04-28", "SH513310", "中韩半导体ETF华泰柏瑞", 4.20, 16.0, 1200),
+        ]
+    )
+    signals = generate_candidate_signals(quotes, "2026-04-28")
+    focus_rows = build_focus_rows(quotes, "2026-04-28", ["513310"])
+
+    digest = format_workwechat_digest(
+        signals,
+        trade_date="2026-04-28",
+        quote_count=1,
+        active_count=1,
+        focus_rows=focus_rows,
+    )
+
+    assert "cross-etf-scout 2026-04-28" in digest
+    assert "特别关注" in digest
+    assert "危险池" in digest
+    assert "SH513310 中韩半导体ETF华泰柏瑞" in digest
+    assert "现价 4.20 | 今日 +0.0% | 溢价 16.0%" in digest
+    assert "<b>" not in digest
+    assert "<code>" not in digest
 
 
 def _quote(trade_date, symbol, name, current, premium_rate, amount):

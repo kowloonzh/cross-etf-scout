@@ -210,6 +210,49 @@ notifications:
     assert "toparty" not in payload
 
 
+def test_send_workwechat_text_splits_long_text(monkeypatch):
+    requests = []
+
+    class FakeResponse:
+        def __init__(self, body):
+            self.body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return self.body
+
+    def fake_urlopen(request, timeout):
+        requests.append(request)
+        if "gettoken" in request.full_url:
+            return FakeResponse(b'{"errcode":0,"access_token":"token"}')
+        return FakeResponse(b'{"errcode":0,"errmsg":"ok"}')
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    config = load_notification_config_from_text(
+        """
+notifications:
+  workwechat:
+    enabled: true
+    corp_id: "corp"
+    corp_secret: "secret"
+    agent_id: "agent"
+"""
+    ).workwechat
+
+    assert send_workwechat_text("line\n" * 1000, config) is True
+
+    send_requests = [request for request in requests if "message/send" in request.full_url]
+    assert len(send_requests) == 3
+    for request in send_requests:
+        payload = urllib.parse.unquote(request.data.decode("utf-8"))
+        assert len(payload) <= 2600
+
+
 def load_notification_config_from_text(text, tmp_path=None):
     from pathlib import Path
     import tempfile

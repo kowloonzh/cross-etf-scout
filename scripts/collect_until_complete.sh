@@ -8,7 +8,7 @@ TRADE_DATE="${1:-$(TZ=Asia/Shanghai date +%F)}"
 LOG_DIR="$ROOT_DIR/logs"
 LOG_PATH="$LOG_DIR/collect-$TRADE_DATE.log"
 REPORT_PATH="$LOG_DIR/report-$TRADE_DATE.md"
-TELEGRAM_PATH="$LOG_DIR/telegram-$TRADE_DATE.md"
+WORKWECHAT_DIGEST_PATH="$LOG_DIR/workwechat-$TRADE_DATE.txt"
 MAX_ATTEMPTS="${CES_COLLECT_MAX_ATTEMPTS:-24}"
 SLEEP_SECONDS="${CES_COLLECT_SLEEP_SECONDS:-300}"
 
@@ -22,30 +22,11 @@ send_success_notifications() {
 
   PYTHONPATH=src python3 -m cross_etf_scout.cli report --date "$TRADE_DATE" > "$REPORT_PATH" || true
   PYTHONPATH=src python3 -m cross_etf_scout.cli candidates --date "$TRADE_DATE" >> "$REPORT_PATH" || true
-  PYTHONPATH=src python3 -m cross_etf_scout.cli telegram-digest --date "$TRADE_DATE" > "$TELEGRAM_PATH" || true
-
-  local signal_count
-  signal_count="$(sqlite3 "$DB_PATH" "select count(*) from daily_signals where trade_date='$TRADE_DATE';")"
-  local watch_count
-  watch_count="$(sqlite3 "$DB_PATH" "select count(*) from daily_signals where trade_date='$TRADE_DATE' and category in ('强势启动','趋势确认');")"
-  local danger_count
-  danger_count="$(sqlite3 "$DB_PATH" "select count(*) from daily_signals where trade_date='$TRADE_DATE' and category in ('极端过热','热度退潮','流动性不足或数据异常');")"
-  local summary
-  summary="cross-etf-scout 采集完成
-日期: $TRADE_DATE
-行情: $quote_count/$active_count
-可选池: $watch_count
-危险池: $danger_count
-信号总数: $signal_count
-日志: $LOG_PATH"
+  PYTHONPATH=src python3 -m cross_etf_scout.cli workwechat-digest --date "$TRADE_DATE" > "$WORKWECHAT_DIGEST_PATH" || true
 
   PYTHONPATH=src python3 -m cross_etf_scout.notifications \
     --channel workwechat \
-    --message "$summary" || true
-
-  PYTHONPATH=src python3 -m cross_etf_scout.notifications \
-    --channel telegram \
-    --file "$TELEGRAM_PATH" || true
+    --file "$WORKWECHAT_DIGEST_PATH" || true
 }
 
 send_failure_notification() {

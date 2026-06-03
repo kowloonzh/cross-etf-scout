@@ -122,6 +122,35 @@ def format_telegram_digest(
     return "\n".join(lines).rstrip()
 
 
+def format_workwechat_digest(
+    signals: list[Signal],
+    trade_date: str,
+    quote_count: int,
+    active_count: int,
+    focus_rows: list[dict[str, Any]] | None = None,
+) -> str:
+    watch_signals = [
+        signal for signal in signals if signal.category in WATCH_CATEGORIES
+    ]
+    danger_signals = [
+        signal for signal in signals if signal.category in DANGER_CATEGORIES
+    ]
+    focus_rows = focus_rows or []
+
+    lines = [
+        f"cross-etf-scout {trade_date}",
+        f"行情: {quote_count}/{active_count} | 可选: {len(watch_signals)} | 危险: {len(danger_signals)}",
+        "",
+        "特别关注",
+    ]
+    lines.extend(_format_workwechat_focus_group(focus_rows, signals))
+    lines.extend(["", "可选池"])
+    lines.extend(_format_workwechat_digest_group(watch_signals))
+    lines.extend(["", "危险池"])
+    lines.extend(_format_workwechat_digest_group(danger_signals))
+    return "\n".join(lines).rstrip()
+
+
 def load_focus_etf_codes(path: str | Path = DEFAULT_CONFIG_PATH) -> list[str]:
     config_path = Path(path)
     if not config_path.exists():
@@ -175,6 +204,20 @@ def _format_digest_signal(signal: Signal) -> str:
     )
 
 
+def _format_workwechat_digest_group(signals: list[Signal]) -> list[str]:
+    if not signals:
+        return ["无"]
+    return [_format_workwechat_digest_signal(signal) for signal in signals]
+
+
+def _format_workwechat_digest_signal(signal: Signal) -> str:
+    return (
+        f"{signal.symbol} {signal.name}\n"
+        f"{signal.category} | score={signal.score:.2f} | 风险={signal.risk_level}\n"
+        f"{signal.reason}"
+    )
+
+
 def _format_focus_group(
     rows: list[dict[str, Any]],
     signals: list[Signal],
@@ -183,6 +226,19 @@ def _format_focus_group(
         return ["无"]
     signals_by_symbol = {signal.symbol: signal for signal in signals}
     return [_format_focus_row(row, signals_by_symbol.get(str(row.get("symbol")))) for row in rows]
+
+
+def _format_workwechat_focus_group(
+    rows: list[dict[str, Any]],
+    signals: list[Signal],
+) -> list[str]:
+    if not rows:
+        return ["无"]
+    signals_by_symbol = {signal.symbol: signal for signal in signals}
+    return [
+        _format_workwechat_focus_row(row, signals_by_symbol.get(str(row.get("symbol"))))
+        for row in rows
+    ]
 
 
 def _format_focus_row(row: dict[str, Any], signal: Signal | None) -> str:
@@ -194,6 +250,18 @@ def _format_focus_row(row: dict[str, Any], signal: Signal | None) -> str:
         f"现价 {_fmt_price(row.get('current'))} | 今日 {_fmt_signed_pct(row.get('percent'))} | 溢价 {_fmt_pct(row.get('premium_rate'))}\n"
         f"5日涨幅 {_fmt_pct(row.get('price_growth_5d'))} | 5日溢价变化 {_fmt_signed_pct(row.get('premium_change_5d'))} | 成交额 {_fmt_ratio(row.get('amount_ratio_5d'))}\n"
         f"状态: {escape(status)}"
+    )
+
+
+def _format_workwechat_focus_row(row: dict[str, Any], signal: Signal | None) -> str:
+    symbol = str(row.get("symbol") or "")
+    name = str(row.get("name") or "")
+    status = signal.category if signal is not None else "未入池"
+    return (
+        f"{symbol} {name}\n"
+        f"现价 {_fmt_price(row.get('current'))} | 今日 {_fmt_signed_pct(row.get('percent'))} | 溢价 {_fmt_pct(row.get('premium_rate'))}\n"
+        f"5日涨幅 {_fmt_pct(row.get('price_growth_5d'))} | 5日溢价变化 {_fmt_signed_pct(row.get('premium_change_5d'))} | 成交额 {_fmt_ratio(row.get('amount_ratio_5d'))}\n"
+        f"状态: {status}"
     )
 
 

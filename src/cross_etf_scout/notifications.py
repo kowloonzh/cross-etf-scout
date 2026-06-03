@@ -14,6 +14,7 @@ import yaml
 
 DEFAULT_CONFIG_PATH = Path("config/config.yaml")
 TELEGRAM_CHUNK_SIZE = 3900
+WORKWECHAT_CHUNK_SIZE = 1900
 
 
 @dataclass(frozen=True)
@@ -109,9 +110,15 @@ def send_workwechat_text(message: str, config: WorkWechatConfig) -> bool:
 
     try:
         access_token = _get_workwechat_access_token(config)
-        result = _send_workwechat_text(access_token, message, config)
-        print(f"WorkWechat result: {result}")
-        return isinstance(result, dict) and result.get("errcode", 0) == 0
+        sent_count = 0
+        for chunk in _split_text(message, WORKWECHAT_CHUNK_SIZE):
+            result = _send_workwechat_text(access_token, chunk, config)
+            if not isinstance(result, dict) or result.get("errcode", 0) != 0:
+                print(f"WorkWechat result: {result}")
+                return False
+            sent_count += 1
+        print(f"WorkWechat result: ok ({sent_count} message(s))")
+        return True
     except Exception as exc:
         print(f"WorkWechat notification failed: {exc}")
         return False
@@ -126,7 +133,7 @@ def send_telegram_message(text: str, config: TelegramConfig) -> bool:
 
     url = f"https://api.telegram.org/bot{urllib.parse.quote(config.bot_token, safe='')}/sendMessage"
     sent_count = 0
-    for chunk in _split_telegram_text(text):
+    for chunk in _split_text(text, TELEGRAM_CHUNK_SIZE):
         payload_data = {
             "chat_id": config.chat_id,
             "text": chunk,
@@ -270,19 +277,19 @@ def _load_string_list(value: Any) -> list[str]:
     return [part.strip() for part in raw.split("|") if part.strip()]
 
 
-def _split_telegram_text(text: str) -> list[str]:
-    if len(text) <= TELEGRAM_CHUNK_SIZE:
+def _split_text(text: str, chunk_size: int) -> list[str]:
+    if len(text) <= chunk_size:
         return [text]
 
     chunks: list[str] = []
     remaining = text
     while remaining:
-        if len(remaining) <= TELEGRAM_CHUNK_SIZE:
+        if len(remaining) <= chunk_size:
             chunks.append(remaining)
             break
-        split_at = remaining.rfind("\n", 0, TELEGRAM_CHUNK_SIZE)
+        split_at = remaining.rfind("\n", 0, chunk_size)
         if split_at <= 0:
-            split_at = TELEGRAM_CHUNK_SIZE
+            split_at = chunk_size
         chunks.append(remaining[:split_at].rstrip())
         remaining = remaining[split_at:].lstrip("\n")
     return chunks

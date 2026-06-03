@@ -8,13 +8,5 @@ notifications:
     user_ids: []
     department_ids: []
     tag_ids: []
-  telegram:
-    enabled: false
-    source: env
-    env_file: ".env"
-    bot_token_env: "TELEGRAM_BOT_TOKEN"
-    chat_id_env: "TELEGRAM_CHAT_ID"
-    parse_mode: "HTML"
-
 focus_etfs:
   - "513310"

@@ -12,8 +12,8 @@
 - 行情和信号存入 SQLite，不使用 CSV 保存历史数据。
 - 采集过程幂等，已采集的日期和代码不会重复拉取。
 - 支持批量查询、重试、超时后重启无头浏览器容器。
-- 生成完整本地报告和精简 Telegram 日报。
-- 支持企业微信简短通知和 Telegram HTML 日报。
+- 生成完整本地报告和企业微信日报。
+- 支持企业微信通知。
 - 支持手动配置特别关注 ETF。
 
 ## 依赖
@@ -71,13 +71,6 @@ notifications:
     user_ids: []
     department_ids: []
     tag_ids: []
-  telegram:
-    enabled: false
-    source: env
-    env_file: ".env"
-    bot_token_env: "TELEGRAM_BOT_TOKEN"
-    chat_id_env: "TELEGRAM_CHAT_ID"
-    parse_mode: "HTML"
 
 focus_etfs:
   - "513310"
@@ -89,8 +82,6 @@ focus_etfs:
 WORKWECHAT_CORP_ID=your-corp-id
 WORKWECHAT_CORP_SECRET=your-app-secret
 WORKWECHAT_AGENT_ID=your-agent-id
-TELEGRAM_BOT_TOKEN=your-telegram-bot-token
-TELEGRAM_CHAT_ID=your-telegram-chat-id
 ```
 
 企业微信接收人是可选配置：
@@ -176,10 +167,10 @@ ces report --date YYYY-MM-DD
 ces candidates --date YYYY-MM-DD
 ```
 
-生成 Telegram HTML 日报：
+生成企业微信纯文本日报：
 
 ```bash
-ces telegram-digest --date YYYY-MM-DD
+ces workwechat-digest --date YYYY-MM-DD
 ```
 
 查看单个 ETF：
@@ -188,7 +179,7 @@ ces telegram-digest --date YYYY-MM-DD
 ces show SH513310
 ```
 
-Telegram 日报只展示：
+企业微信日报只展示：
 
 - 特别关注
 - 可选池
@@ -206,12 +197,12 @@ PYTHONPATH=src python3 -m cross_etf_scout.notifications \
   --message "test"
 ```
 
-手动发送 Telegram 日报：
+手动发送企业微信日报：
 
 ```bash
 PYTHONPATH=src python3 -m cross_etf_scout.notifications \
-  --channel telegram \
-  --file logs/telegram-YYYY-MM-DD.md
+  --channel workwechat \
+  --file logs/workwechat-YYYY-MM-DD.txt
 ```
 
 ## 每日定时任务

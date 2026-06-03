@@ -17,6 +17,7 @@ from cross_etf_scout.reporting import (
     format_candidates,
     format_report,
     format_telegram_digest,
+    format_workwechat_digest,
     load_focus_etf_codes,
 )
 from cross_etf_scout.storage import (
@@ -86,6 +87,25 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
+    if args.command == "workwechat-digest":
+        quotes = pd.DataFrame(load_quotes(db_path))
+        signals = generate_candidate_signals(quotes, args.date)
+        replace_daily_signals(db_path, args.date, signals)
+        quote_count = len(load_quotes(db_path, trade_date=args.date))
+        active_count = len(list_active_etfs(db_path))
+        focus_codes = load_focus_etf_codes(args.config)
+        focus_rows = build_focus_rows(quotes, args.date, focus_codes)
+        print(
+            format_workwechat_digest(
+                signals,
+                args.date,
+                quote_count,
+                active_count,
+                focus_rows=focus_rows,
+            )
+        )
+        return 0
+
     if args.command == "show":
         _show(args, db_path)
         return 0
@@ -127,6 +147,10 @@ def _build_parser() -> argparse.ArgumentParser:
     telegram_digest_parser = subparsers.add_parser("telegram-digest")
     telegram_digest_parser.add_argument("--date", default=date.today().isoformat())
     telegram_digest_parser.add_argument("--config", default="config/config.yaml")
+
+    workwechat_digest_parser = subparsers.add_parser("workwechat-digest")
+    workwechat_digest_parser.add_argument("--date", default=date.today().isoformat())
+    workwechat_digest_parser.add_argument("--config", default="config/config.yaml")
 
     show_parser = subparsers.add_parser("show")
     show_parser.add_argument("symbol")
