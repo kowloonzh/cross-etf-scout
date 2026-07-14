@@ -32,7 +32,7 @@ https://github.com/kowloonzh/xueqiu-cli/blob/main/README_zh.md
 服务器无 Chrome 桌面环境时，可以按 `xueqiu-cli` 文档启动无头浏览器：
 
 ```bash
-docker run -d -p 9222:9222 --rm --name headless-shell chromedp/headless-shell
+docker run -d -p 9222:9222 --restart unless-stopped --name headless-shell chromedp/headless-shell
 curl http://127.0.0.1:9222/json/version
 ```
 

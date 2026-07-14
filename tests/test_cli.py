@@ -419,7 +419,7 @@ def test_cli_collect_restarts_container_after_timeout_before_retrying_batch(
     assert "Restarted container after timeout: headless-shell" in capsys.readouterr().out
 
 
-def test_cli_collect_starts_headless_container_when_browser_is_unavailable(
+def test_cli_collect_starts_persistent_headless_container_when_browser_is_unavailable(
     tmp_path, monkeypatch, capsys
 ):
     db_path = tmp_path / "scout.sqlite"
@@ -497,7 +497,8 @@ def test_cli_collect_starts_headless_container_when_browser_is_unavailable(
             "-d",
             "-p",
             "9222:9222",
-            "--rm",
+            "--restart",
+            "unless-stopped",
             "--name",
             "headless-shell",
             "chromedp/headless-shell",
