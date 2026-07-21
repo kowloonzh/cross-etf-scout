@@ -151,6 +151,24 @@ def format_workwechat_digest(
     return "\n".join(lines).rstrip()
 
 
+def format_focus_live_digest(
+    quotes: list[dict[str, Any]],
+    trade_date: str,
+) -> str:
+    lines = [
+        f"cross-etf-scout 特别关注 {trade_date}",
+        f"行情: {len(quotes)}",
+        "",
+    ]
+    if not quotes:
+        lines.append("无")
+        return "\n".join(lines).rstrip()
+    for quote in quotes:
+        lines.append(_format_focus_live_row(quote))
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
 def load_focus_etf_codes(path: str | Path = DEFAULT_CONFIG_PATH) -> list[str]:
     config_path = Path(path)
     if not config_path.exists():
@@ -265,6 +283,16 @@ def _format_workwechat_focus_row(row: dict[str, Any], signal: Signal | None) -> 
     )
 
 
+def _format_focus_live_row(row: dict[str, Any]) -> str:
+    symbol = str(row.get("symbol") or "")
+    name = str(row.get("name") or "")
+    return (
+        f"{symbol} {name}\n"
+        f"现价 {_fmt_price(row.get('current'))} | 今日 {_fmt_signed_pct(row.get('percent'))} | 溢价 {_fmt_pct(row.get('premium_rate'))}\n"
+        f"IOPV {_fmt_price(row.get('iopv'))} | 单位净值 {_fmt_price(row.get('unit_nav'))} | 成交额 {_fmt_amount(row.get('amount'))}"
+    )
+
+
 def _normalize_symbol(value: Any) -> str:
     raw = str(value or "").strip().upper()
     if raw.startswith(("SH", "SZ")):
@@ -294,6 +322,17 @@ def _fmt_ratio(value: Any) -> str:
     if value is None or pd.isna(value):
         return "无数据"
     return f"{float(value):.2f}倍"
+
+
+def _fmt_amount(value: Any) -> str:
+    if value is None or pd.isna(value):
+        return "无数据"
+    amount = float(value)
+    if abs(amount) >= 100_000_000:
+        return f"{amount / 100_000_000:.2f}亿"
+    if abs(amount) >= 10_000:
+        return f"{amount / 10_000:.2f}万"
+    return f"{amount:.0f}"
 
 
 def _top(frame: pd.DataFrame, column: str, limit: int = 20) -> pd.DataFrame:

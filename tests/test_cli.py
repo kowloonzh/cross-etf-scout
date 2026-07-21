@@ -507,6 +507,75 @@ def test_cli_collect_starts_persistent_headless_container_when_browser_is_unavai
     assert "Started container for browser dependency: headless-shell" in capsys.readouterr().out
 
 
+def test_cli_focus_live_digest_fetches_focus_quotes_without_storing(
+    tmp_path, monkeypatch, capsys
+):
+    db_path = tmp_path / "scout.sqlite"
+    csv_path = tmp_path / "cross_etf.csv"
+    with csv_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["证券代码", "交易所", "symbol", "证券名称"])
+        writer.writerow(["513310", "SH", "SH513310", "中韩半导体ETF华泰柏瑞"])
+        writer.writerow(["159501", "SZ", "SZ159501", "纳指ETF嘉实"])
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+focus_etfs:
+  - "513310"
+  - "159501"
+""",
+        encoding="utf-8",
+    )
+    init_db(db_path)
+    import_etfs(csv_path, db_path)
+    calls = []
+
+    def fake_fetch_stocks(
+        symbols, chrome_remote_url, timeout_seconds, retries, retry_delay_seconds
+    ):
+        calls.append(symbols)
+        return [
+            {
+                "symbol": symbol,
+                "name": symbol,
+                "current": 4.743,
+                "percent": 4.59,
+                "premium_rate": 7.29,
+                "unit_nav": 4.312,
+                "iopv": 4.4207,
+                "amount": 2135690949.0,
+                "source_timestamp": "1784598029780",
+            }
+            for symbol in symbols
+        ]
+
+    monkeypatch.setattr("cross_etf_scout.cli.fetch_stocks", fake_fetch_stocks)
+
+    assert (
+        main(
+            [
+                "--db",
+                str(db_path),
+                "focus-live-digest",
+                "--date",
+                "2026-07-21",
+                "--config",
+                str(config_path),
+                "--batch-size",
+                "2",
+            ]
+        )
+        == 0
+    )
+
+    assert calls == [["SH513310", "SZ159501"]]
+    assert load_quotes(db_path, trade_date="2026-07-21") == []
+    output = capsys.readouterr().out
+    assert "cross-etf-scout 特别关注 2026-07-21" in output
+    assert "SH513310 中韩半导体ETF华泰柏瑞" in output
+    assert "SZ159501 纳指ETF嘉实" in output
+
+
 def _write_etf_csv(path):
     with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)

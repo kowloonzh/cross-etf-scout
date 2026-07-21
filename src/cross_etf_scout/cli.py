@@ -13,6 +13,7 @@ import pandas as pd
 from cross_etf_scout.analysis import generate_candidate_signals
 from cross_etf_scout.reporting import (
     build_focus_rows,
+    format_focus_live_digest,
     build_report_sections,
     format_candidates,
     format_report,
@@ -106,6 +107,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
+    if args.command == "focus-live-digest":
+        return _focus_live_digest(args, db_path)
+
     if args.command == "show":
         _show(args, db_path)
         return 0
@@ -151,6 +155,19 @@ def _build_parser() -> argparse.ArgumentParser:
     workwechat_digest_parser = subparsers.add_parser("workwechat-digest")
     workwechat_digest_parser.add_argument("--date", default=date.today().isoformat())
     workwechat_digest_parser.add_argument("--config", default="config/config.yaml")
+
+    focus_live_parser = subparsers.add_parser("focus-live-digest")
+    focus_live_parser.add_argument("--date", default=date.today().isoformat())
+    focus_live_parser.add_argument("--config", default="config/config.yaml")
+    focus_live_parser.add_argument("--chrome-remote-url", default=DEFAULT_CHROME_REMOTE_URL)
+    focus_live_parser.add_argument("--batch-size", type=int, default=10)
+    focus_live_parser.add_argument("--request-timeout", type=int, default=30)
+    focus_live_parser.add_argument("--retries", type=int, default=2)
+    focus_live_parser.add_argument("--retry-delay", type=float, default=1.0)
+    focus_live_parser.add_argument("--restart-container-on-timeout", default="headless-shell")
+    focus_live_parser.add_argument("--ensure-browser", action="store_true")
+    focus_live_parser.add_argument("--headless-image", default="chromedp/headless-shell")
+    focus_live_parser.add_argument("--headless-host-port", default="9222")
 
     show_parser = subparsers.add_parser("show")
     show_parser.add_argument("symbol")
@@ -230,6 +247,55 @@ def _collect(args: argparse.Namespace, db_path: Path) -> int:
     for symbol, message in failures:
         print(f"- {symbol}: {message}")
     return 0 if successes else 1
+
+
+def _focus_live_digest(args: argparse.Namespace, db_path: Path) -> int:
+    focus_codes = load_focus_etf_codes(args.config)
+    if not focus_codes:
+        print(format_focus_live_digest([], args.date))
+        return 0
+
+    if args.ensure_browser and not _ensure_browser(args):
+        print("Browser dependency is unavailable; continuing focus digest attempt.")
+
+    active_etfs = list_active_etfs(db_path)
+    etfs_by_code = {
+        _normalize_symbol(etf["symbol"]): etf
+        for etf in active_etfs
+        if int(etf.get("active", 0)) == 1
+    }
+    selected_etfs = []
+    for code in focus_codes:
+        normalized = _normalize_symbol(code)
+        etf = etfs_by_code.get(normalized)
+        if etf is not None:
+            selected_etfs.append(etf)
+
+    symbols = [etf["symbol"] for etf in selected_etfs]
+    names_by_symbol = {etf["symbol"]: etf["name"] for etf in selected_etfs}
+    quotes: list[dict] = []
+    for batch in _chunks(symbols, args.batch_size):
+        quotes.extend(_fetch_batch(args, batch))
+
+    returned_symbols = set()
+    for quote in quotes:
+        symbol = quote["symbol"]
+        returned_symbols.add(symbol)
+        quote["trade_date"] = quote.get("trade_date") or args.date
+        if not quote.get("name") or quote["name"] == symbol:
+            quote["name"] = names_by_symbol.get(symbol, symbol)
+
+    ordered_quotes = sorted(
+        quotes,
+        key=lambda quote: symbols.index(quote["symbol"])
+        if quote.get("symbol") in symbols
+        else len(symbols),
+    )
+    print(format_focus_live_digest(ordered_quotes, args.date))
+    missing_symbols = [symbol for symbol in symbols if symbol not in returned_symbols]
+    for symbol in missing_symbols:
+        print(f"- {symbol}: symbol missing from focus response")
+    return 0 if quotes else 1
 
 
 def _fetch_batch(args: argparse.Namespace, batch: list[str]) -> list[dict]:
@@ -323,6 +389,13 @@ def _restart_or_start_container(
         print(f"Failed to start container {container_name}: {exc}")
         return False
     return True
+
+
+def _normalize_symbol(value: str) -> str:
+    raw = str(value or "").strip().upper()
+    if raw.startswith(("SH", "SZ")):
+        return raw[2:]
+    return raw
 
 
 def _collect_one_by_one(

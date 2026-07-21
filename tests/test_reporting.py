@@ -9,6 +9,7 @@ from cross_etf_scout.reporting import (
     format_candidates,
     format_report,
     format_telegram_digest,
+    format_focus_live_digest,
     format_workwechat_digest,
 )
 
@@ -164,6 +165,30 @@ def test_format_workwechat_digest_uses_plain_text_for_enterprise_wechat():
     assert "现价 4.20 | 今日 +0.0% | 溢价 16.0%" in digest
     assert "<b>" not in digest
     assert "<code>" not in digest
+
+
+def test_format_focus_live_digest_shows_intraday_focus_quotes():
+    digest = format_focus_live_digest(
+        [
+            {
+                "symbol": "SH513310",
+                "name": "中韩半导体ETF华泰柏瑞",
+                "current": 4.743,
+                "percent": 4.59,
+                "premium_rate": 7.29,
+                "iopv": 4.4207,
+                "unit_nav": 4.312,
+                "amount": 2135690949,
+                "source_timestamp": "1784598029780",
+            }
+        ],
+        trade_date="2026-07-21",
+    )
+
+    assert "cross-etf-scout 特别关注 2026-07-21" in digest
+    assert "SH513310 中韩半导体ETF华泰柏瑞" in digest
+    assert "现价 4.74 | 今日 +4.6% | 溢价 7.3%" in digest
+    assert "IOPV 4.42 | 单位净值 4.31 | 成交额 21.36亿" in digest
 
 
 def _quote(trade_date, symbol, name, current, premium_rate, amount):
