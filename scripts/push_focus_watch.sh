@@ -28,10 +28,6 @@ PYTHONPATH=src python3 -m cross_etf_scout.cli focus-live-digest \
   --request-timeout "${CES_FOCUS_REQUEST_TIMEOUT:-30}" \
   --retries "${CES_FOCUS_RETRIES:-2}" \
   --retry-delay "${CES_FOCUS_RETRY_DELAY:-1}" \
-  --ensure-browser \
-  --restart-container-on-timeout "${CES_HEADLESS_CONTAINER_NAME:-headless-shell}" \
-  --headless-image "${CES_HEADLESS_IMAGE:-chromedp/headless-shell}" \
-  --headless-host-port "${CES_HEADLESS_HOST_PORT:-9222}" \
   > "$DIGEST_PATH"
 
 PYTHONPATH=src python3 -m cross_etf_scout.notifications \

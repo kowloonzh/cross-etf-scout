@@ -115,7 +115,7 @@ def test_cli_collect_uses_batch_fetch(tmp_path, monkeypatch, capsys):
         == 0
     )
 
-    assert calls == [(["SH513310", "SZ159100"], "http://127.0.0.1:9222", 20, 3, 0.0)]
+    assert calls == [(["SH513310", "SZ159100"], None, 20, 3, 0.0)]
     assert "Collected 2 quotes, 0 failures." in capsys.readouterr().out
 
 
@@ -339,7 +339,6 @@ def test_cli_collect_falls_back_to_single_symbol_after_batch_timeout(
                 "2",
                 "--request-timeout",
                 "1",
-                "--no-restart-on-timeout",
             ]
         )
         == 0
@@ -350,7 +349,7 @@ def test_cli_collect_falls_back_to_single_symbol_after_batch_timeout(
     assert "Collected 2 quotes, 0 failures." in capsys.readouterr().out
 
 
-def test_cli_collect_restarts_container_after_timeout_before_retrying_batch(
+def test_cli_collect_falls_back_without_restarting_browser_after_timeout(
     tmp_path, monkeypatch, capsys
 ):
     db_path = tmp_path / "scout.sqlite"
@@ -362,36 +361,40 @@ def test_cli_collect_restarts_container_after_timeout_before_retrying_batch(
     init_db(db_path)
     import_etfs(csv_path, db_path)
     fetch_attempts = []
-    restart_calls = []
+    single_calls = []
+    subprocess_calls = []
 
     def fake_fetch_stocks(
         symbols, chrome_remote_url, timeout_seconds, retries, retry_delay_seconds
     ):
         fetch_attempts.append(symbols)
-        if len(fetch_attempts) == 1:
-            raise subprocess.TimeoutExpired("xueqiu-cli", timeout_seconds)
-        return [
-            {
-                "symbol": symbols[0],
-                "name": symbols[0],
-                "current": 1.0,
-                "percent": 0.0,
-                "premium_rate": 1.0,
-                "unit_nav": 1.0,
-                "iopv": 1.0,
-                "amount": 100.0,
-                "volume": 100.0,
-                "market_capital": 1000.0,
-                "source_timestamp": "2026-04-28T15:00:00+08:00",
-            }
-        ]
+        raise subprocess.TimeoutExpired("tencent", timeout_seconds)
 
-    def fake_run(cmd, check):
-        restart_calls.append(cmd)
-        return subprocess.CompletedProcess(cmd, 0)
+    def fake_fetch_stock(
+        symbol, chrome_remote_url, timeout_seconds, retries, retry_delay_seconds
+    ):
+        single_calls.append(symbol)
+        return {
+            "symbol": symbol,
+            "name": symbol,
+            "current": 1.0,
+            "percent": 0.0,
+            "premium_rate": 1.0,
+            "unit_nav": 1.0,
+            "iopv": 1.0,
+            "amount": 100.0,
+            "volume": 100.0,
+            "market_capital": 1000.0,
+            "source_timestamp": "2026-04-28T15:00:00+08:00",
+        }
 
     monkeypatch.setattr("cross_etf_scout.cli.fetch_stocks", fake_fetch_stocks)
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr("cross_etf_scout.cli.fetch_stock", fake_fetch_stock)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess_calls.append((args, kwargs)),
+    )
 
     assert (
         main(
@@ -414,97 +417,10 @@ def test_cli_collect_restarts_container_after_timeout_before_retrying_batch(
         == 0
     )
 
-    assert fetch_attempts == [["SZ159100"], ["SZ159100"]]
-    assert restart_calls == [["docker", "restart", "headless-shell"]]
-    assert "Restarted container after timeout: headless-shell" in capsys.readouterr().out
-
-
-def test_cli_collect_starts_persistent_headless_container_when_browser_is_unavailable(
-    tmp_path, monkeypatch, capsys
-):
-    db_path = tmp_path / "scout.sqlite"
-    csv_path = tmp_path / "cross_etf.csv"
-    _write_etf_csv(csv_path)
-    init_db(db_path)
-    import_etfs(csv_path, db_path)
-    ready_checks = [False, False, True]
-    docker_calls = []
-
-    def fake_is_chrome_remote_ready(chrome_remote_url):
-        assert chrome_remote_url == "http://127.0.0.1:9222"
-        return ready_checks.pop(0)
-
-    def fake_run(cmd, capture_output=False, text=False, check=False):
-        docker_calls.append(cmd)
-        if cmd[:3] == ["docker", "ps", "-a"]:
-            return subprocess.CompletedProcess(cmd, 0, stdout="")
-        return subprocess.CompletedProcess(cmd, 0, stdout="container-id\n")
-
-    def fake_fetch_stocks(
-        symbols, chrome_remote_url, timeout_seconds, retries, retry_delay_seconds
-    ):
-        return [
-            {
-                "symbol": symbols[0],
-                "name": symbols[0],
-                "current": 1.0,
-                "percent": 0.0,
-                "premium_rate": 1.0,
-                "unit_nav": 1.0,
-                "iopv": 1.0,
-                "amount": 100.0,
-                "volume": 100.0,
-                "market_capital": 1000.0,
-                "source_timestamp": "2026-04-28T15:00:00+08:00",
-            }
-        ]
-
-    monkeypatch.setattr(
-        "cross_etf_scout.cli._is_chrome_remote_ready", fake_is_chrome_remote_ready
-    )
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    monkeypatch.setattr("cross_etf_scout.cli.fetch_stocks", fake_fetch_stocks)
-
-    assert (
-        main(
-            [
-                "--db",
-                str(db_path),
-                "collect",
-                "--date",
-                "2026-04-28",
-                "--batch-size",
-                "1",
-                "--ensure-browser",
-            ]
-        )
-        == 0
-    )
-
-    assert docker_calls == [
-        [
-            "docker",
-            "ps",
-            "-a",
-            "--filter",
-            "name=^/headless-shell$",
-            "--format",
-            "{{.Names}}",
-        ],
-        [
-            "docker",
-            "run",
-            "-d",
-            "-p",
-            "9222:9222",
-            "--restart",
-            "unless-stopped",
-            "--name",
-            "headless-shell",
-            "chromedp/headless-shell",
-        ],
-    ]
-    assert "Started container for browser dependency: headless-shell" in capsys.readouterr().out
+    assert fetch_attempts == [["SZ159100"]]
+    assert single_calls == ["SZ159100"]
+    assert subprocess_calls == []
+    assert "Collected 1 quotes, 0 failures." in capsys.readouterr().out
 
 
 def test_cli_focus_live_digest_fetches_focus_quotes_without_storing(

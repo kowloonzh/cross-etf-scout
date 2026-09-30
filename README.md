@@ -8,10 +8,10 @@
 
 ## 功能
 
-- 用 `xueqiu-cli` 采集雪球行情。
+- 用腾讯行情接口批量采集价格、IOPV，并计算实时溢价率。
 - 行情和信号存入 SQLite，不使用 CSV 保存历史数据。
 - 采集过程幂等，已采集的日期和代码不会重复拉取。
-- 支持批量查询、重试、超时后重启无头浏览器容器。
+- 支持批量查询、超时和有限重试。
 - 生成完整本地报告和企业微信日报。
 - 支持企业微信通知。
 - 支持手动配置特别关注 ETF。
@@ -20,27 +20,11 @@
 
 - Python 3.10+
 - `sqlite3` 命令行工具
-- [`xueqiu-cli`](https://github.com/kowloonzh/xueqiu-cli/blob/main/README_zh.md)
-- Chrome/Chromium remote debugging endpoint
 
-`xueqiu-cli` 的安装和使用见它的中文文档：
+腾讯 ETF 行情响应中的最新价和 IOPV 用于计算：
 
 ```text
-https://github.com/kowloonzh/xueqiu-cli/blob/main/README_zh.md
-```
-
-服务器无 Chrome 桌面环境时，可以按 `xueqiu-cli` 文档启动无头浏览器：
-
-```bash
-docker run -d -p 9222:9222 --restart unless-stopped --name headless-shell chromedp/headless-shell
-curl http://127.0.0.1:9222/json/version
-```
-
-确认 `xueqiu-cli` 可用：
-
-```bash
-xueqiu-cli --chrome-remote-url=http://127.0.0.1:9222 stock SH513310
-xueqiu-cli --chrome-remote-url=http://127.0.0.1:9222 stocks SH513310,SH000001
+溢价率 = (最新价 / IOPV - 1) × 100%
 ```
 
 ## 安装
@@ -129,12 +113,6 @@ ces collect
 ces collect --date YYYY-MM-DD
 ```
 
-指定 Chrome remote endpoint：
-
-```bash
-ces collect --chrome-remote-url http://127.0.0.1:9222
-```
-
 调整批量大小、超时和重试：
 
 ```bash
@@ -145,12 +123,6 @@ ces collect --batch-size 10 --request-timeout 30 --retries 2 --retry-delay 1
 
 ```bash
 ces collect --force
-```
-
-如果批量查询多次超时，程序会重启默认容器 `headless-shell` 后再试。禁用重启：
-
-```bash
-ces collect --no-restart-on-timeout
 ```
 
 ## 查看报告
