@@ -167,7 +167,7 @@ def test_format_workwechat_digest_uses_plain_text_for_enterprise_wechat():
     assert "<code>" not in digest
 
 
-def test_format_focus_live_digest_shows_intraday_focus_quotes():
+def test_format_focus_live_digest_matches_workwechat_premium_style():
     digest = format_focus_live_digest(
         [
             {
@@ -185,10 +185,10 @@ def test_format_focus_live_digest_shows_intraday_focus_quotes():
         trade_date="2026-07-21",
     )
 
-    assert "cross-etf-scout 特别关注 2026-07-21" in digest
-    assert "SH513310 中韩半导体ETF华泰柏瑞" in digest
-    assert "现价 4.74 | 今日 +4.6% | 溢价 7.3%" in digest
-    assert "IOPV 4.42 | 单位净值 4.31 | 成交额 21.36亿" in digest
+    assert digest == (
+        "cross-etf-scout 特别关注溢价率 2026-07-21\n"
+        "- 中韩半导体ETF华泰柏瑞（SH513310）：溢价率 7.3%"
+    )
 
 
 def _quote(trade_date, symbol, name, current, premium_rate, amount):

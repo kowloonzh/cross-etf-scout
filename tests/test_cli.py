@@ -119,6 +119,130 @@ def test_cli_collect_uses_batch_fetch(tmp_path, monkeypatch, capsys):
     assert "Collected 2 quotes, 0 failures." in capsys.readouterr().out
 
 
+def test_cli_collect_focus_only_fetches_only_configured_active_etfs(
+    tmp_path, monkeypatch, capsys
+):
+    db_path = tmp_path / "scout.sqlite"
+    csv_path = tmp_path / "cross_etf.csv"
+    config_path = tmp_path / "config.yaml"
+    with csv_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["证券代码", "交易所", "symbol", "证券名称"])
+        writer.writerow(["159100", "SZ", "SZ159100", "巴西ETF华夏"])
+        writer.writerow(["513310", "SH", "SH513310", "中韩半导体ETF华泰柏瑞"])
+    config_path.write_text("focus_etfs:\n  - '513310'\n", encoding="utf-8")
+    init_db(db_path)
+    import_etfs(csv_path, db_path)
+    calls = []
+
+    def fake_fetch_stocks(
+        symbols, chrome_remote_url, timeout_seconds, retries, retry_delay_seconds
+    ):
+        calls.append(symbols)
+        return [
+            _quote("2026-04-28", 1.0, 1.0, 100.0) | {"symbol": symbol}
+            for symbol in symbols
+        ]
+
+    monkeypatch.setattr("cross_etf_scout.cli.fetch_stocks", fake_fetch_stocks)
+
+    assert (
+        main(
+            [
+                "--db",
+                str(db_path),
+                "collect",
+                "--date",
+                "2026-04-28",
+                "--focus-only",
+                "--config",
+                str(config_path),
+            ]
+        )
+        == 0
+    )
+
+    assert calls == [["SH513310"]]
+    assert [row["symbol"] for row in load_quotes(db_path)] == ["SH513310"]
+    assert "focus-only" in capsys.readouterr().out
+
+
+def test_cli_collect_focus_only_fails_closed_when_focus_config_is_empty(
+    tmp_path, monkeypatch, capsys
+):
+    db_path = tmp_path / "scout.sqlite"
+    csv_path = tmp_path / "cross_etf.csv"
+    config_path = tmp_path / "config.yaml"
+    _write_etf_csv(csv_path)
+    config_path.write_text("focus_etfs: []\n", encoding="utf-8")
+    init_db(db_path)
+    import_etfs(csv_path, db_path)
+
+    def unexpected_fetch(*args, **kwargs):
+        raise AssertionError("empty focus config must not collect the full universe")
+
+    monkeypatch.setattr("cross_etf_scout.cli.fetch_stocks", unexpected_fetch)
+
+    assert (
+        main(
+            [
+                "--db",
+                str(db_path),
+                "collect",
+                "--focus-only",
+                "--config",
+                str(config_path),
+            ]
+        )
+        == 1
+    )
+    assert "No focus_etfs configured" in capsys.readouterr().out
+
+
+def test_cli_workwechat_digest_focus_only_uses_focus_scope_and_template(
+    tmp_path, capsys
+):
+    db_path = tmp_path / "scout.sqlite"
+    csv_path = tmp_path / "cross_etf.csv"
+    config_path = tmp_path / "config.yaml"
+    with csv_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["证券代码", "交易所", "symbol", "证券名称"])
+        writer.writerow(["159100", "SZ", "SZ159100", "巴西ETF华夏"])
+        writer.writerow(["513310", "SH", "SH513310", "中韩半导体ETF华泰柏瑞"])
+    config_path.write_text("focus_etfs:\n  - '513310'\n", encoding="utf-8")
+    init_db(db_path)
+    import_etfs(csv_path, db_path)
+    upsert_daily_quote(db_path, _quote("2026-04-28", 1.0, 1.0, 100.0))
+    upsert_daily_quote(
+        db_path,
+        _quote("2026-04-28", 1.1, 5.0, 200.0)
+        | {"symbol": "SH513310", "name": "中韩半导体ETF华泰柏瑞"},
+    )
+
+    assert (
+        main(
+            [
+                "--db",
+                str(db_path),
+                "workwechat-digest",
+                "--date",
+                "2026-04-28",
+                "--focus-only",
+                "--config",
+                str(config_path),
+            ]
+        )
+        == 0
+    )
+
+    output = capsys.readouterr().out
+    assert output.strip() == (
+        "cross-etf-scout 特别关注溢价率 2026-04-28\n"
+        "- 中韩半导体ETF华泰柏瑞（SH513310）：溢价率 5.0%"
+    )
+
+
 def test_cli_collect_uses_source_trade_date_from_quote(tmp_path, monkeypatch):
     db_path = tmp_path / "scout.sqlite"
     csv_path = tmp_path / "cross_etf.csv"

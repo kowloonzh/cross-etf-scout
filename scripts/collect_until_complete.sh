@@ -17,12 +17,10 @@ mkdir -p "$LOG_DIR"
 exec >>"$LOG_PATH" 2>&1
 
 send_success_notifications() {
-  local active_count="$1"
-  local quote_count="$2"
-
   PYTHONPATH=src python3 -m cross_etf_scout.cli report --date "$TRADE_DATE" > "$REPORT_PATH" || true
   PYTHONPATH=src python3 -m cross_etf_scout.cli candidates --date "$TRADE_DATE" >> "$REPORT_PATH" || true
-  PYTHONPATH=src python3 -m cross_etf_scout.cli workwechat-digest --date "$TRADE_DATE" > "$WORKWECHAT_DIGEST_PATH" || true
+  PYTHONPATH=src python3 -m cross_etf_scout.cli workwechat-digest \
+    --date "$TRADE_DATE" --focus-only > "$WORKWECHAT_DIGEST_PATH" || true
 
   PYTHONPATH=src python3 -m cross_etf_scout.notifications \
     --channel workwechat \
@@ -30,12 +28,10 @@ send_success_notifications() {
 }
 
 send_failure_notification() {
-  local active_count="$1"
-  local quote_count="$2"
   local summary
   summary="cross-etf-scout 采集未完成
 日期: $TRADE_DATE
-行情: $quote_count/$active_count
+特别关注标的行情未全部采集
 日志: $LOG_PATH"
 
   PYTHONPATH=src python3 -m cross_etf_scout.notifications \
@@ -65,17 +61,15 @@ latest_complete_trade_date() {
   "
 }
 
-exit_if_weekend_data_is_stale() {
-  local active_count="$1"
-  local quote_count="$2"
+skip_weekend_if_data_is_stale() {
   local latest_date
 
-  if [ "$active_count" = "0" ] || [ "$quote_count" != "0" ] || ! is_weekend; then
+  if ! is_weekend; then
     return 1
   fi
 
   latest_date="$(latest_complete_trade_date)"
-  if [ -n "$latest_date" ] && [ "$latest_date" != "$TRADE_DATE" ]; then
+  if [ -n "$latest_date" ]; then
     echo "[$(TZ=Asia/Shanghai date '+%F %T %Z')] market data not updated for $TRADE_DATE; latest_complete_trade_date=$latest_date"
     return 0
   fi
@@ -100,40 +94,21 @@ fi
 
 attempt=1
 while [ "$attempt" -le "$MAX_ATTEMPTS" ]; do
-  active_count="$(sqlite3 "$DB_PATH" "select count(*) from etfs where active=1;")"
-  quote_count="$(sqlite3 "$DB_PATH" "select count(*) from daily_quotes where trade_date='$TRADE_DATE';")"
+  echo "[$(TZ=Asia/Shanghai date '+%F %T %Z')] attempt=$attempt scope=focus-only"
 
-  echo "[$(TZ=Asia/Shanghai date '+%F %T %Z')] attempt=$attempt active=$active_count quotes=$quote_count"
-
-  if [ "$active_count" != "0" ] && [ "$quote_count" = "$active_count" ]; then
-    echo "[$(TZ=Asia/Shanghai date '+%F %T %Z')] collection complete"
-    send_success_notifications "$active_count" "$quote_count"
+  if skip_weekend_if_data_is_stale; then
     exit 0
   fi
 
-  if exit_if_weekend_data_is_stale "$active_count" "$quote_count"; then
-    exit 0
-  fi
-
-  PYTHONPATH=src python3 -m cross_etf_scout.cli collect \
+  if PYTHONPATH=src python3 -m cross_etf_scout.cli collect \
     --date "$TRADE_DATE" \
+    --focus-only \
     --batch-size "${CES_COLLECT_BATCH_SIZE:-5}" \
     --request-timeout "${CES_COLLECT_REQUEST_TIMEOUT:-30}" \
     --retries "${CES_COLLECT_RETRIES:-2}" \
-    --retry-delay "${CES_COLLECT_RETRY_DELAY:-1}"
-
-  active_count="$(sqlite3 "$DB_PATH" "select count(*) from etfs where active=1;")"
-  quote_count="$(sqlite3 "$DB_PATH" "select count(*) from daily_quotes where trade_date='$TRADE_DATE';")"
-
-  echo "[$(TZ=Asia/Shanghai date '+%F %T %Z')] after collect active=$active_count quotes=$quote_count"
-
-  if exit_if_weekend_data_is_stale "$active_count" "$quote_count"; then
-    exit 0
-  fi
-
-  if [ "$active_count" != "0" ] && [ "$quote_count" = "$active_count" ]; then
+    --retry-delay "${CES_COLLECT_RETRY_DELAY:-1}"; then
     echo "[$(TZ=Asia/Shanghai date '+%F %T %Z')] collection complete"
-    send_success_notifications "$active_count" "$quote_count"
+    send_success_notifications
     exit 0
   fi
 
@@ -145,5 +120,5 @@ while [ "$attempt" -le "$MAX_ATTEMPTS" ]; do
 done
 
 echo "[$(TZ=Asia/Shanghai date '+%F %T %Z')] collection incomplete after $MAX_ATTEMPTS attempts"
-send_failure_notification "$active_count" "$quote_count"
+send_failure_notification
 exit 1

@@ -128,6 +128,7 @@ def format_workwechat_digest(
     quote_count: int,
     active_count: int,
     focus_rows: list[dict[str, Any]] | None = None,
+    focus_only: bool = False,
 ) -> str:
     watch_signals = [
         signal for signal in signals if signal.category in WATCH_CATEGORIES
@@ -136,6 +137,14 @@ def format_workwechat_digest(
         signal for signal in signals if signal.category in DANGER_CATEGORIES
     ]
     focus_rows = focus_rows or []
+
+    if focus_only:
+        lines = [f"cross-etf-scout 特别关注溢价率 {trade_date}"]
+        if focus_rows:
+            lines.extend(_format_workwechat_focus_premium_row(row) for row in focus_rows)
+        else:
+            lines.append("无")
+        return "\n".join(lines)
 
     lines = [
         f"cross-etf-scout {trade_date}",
@@ -155,17 +164,12 @@ def format_focus_live_digest(
     quotes: list[dict[str, Any]],
     trade_date: str,
 ) -> str:
-    lines = [
-        f"cross-etf-scout 特别关注 {trade_date}",
-        f"行情: {len(quotes)}",
-        "",
-    ]
+    lines = [f"cross-etf-scout 特别关注溢价率 {trade_date}"]
     if not quotes:
         lines.append("无")
         return "\n".join(lines).rstrip()
     for quote in quotes:
-        lines.append(_format_focus_live_row(quote))
-        lines.append("")
+        lines.append(_format_workwechat_focus_premium_row(quote))
     return "\n".join(lines).rstrip()
 
 
@@ -281,6 +285,12 @@ def _format_workwechat_focus_row(row: dict[str, Any], signal: Signal | None) -> 
         f"5日涨幅 {_fmt_pct(row.get('price_growth_5d'))} | 5日溢价变化 {_fmt_signed_pct(row.get('premium_change_5d'))} | 成交额 {_fmt_ratio(row.get('amount_ratio_5d'))}\n"
         f"状态: {status}"
     )
+
+
+def _format_workwechat_focus_premium_row(row: dict[str, Any]) -> str:
+    symbol = str(row.get("symbol") or "")
+    name = str(row.get("name") or "")
+    return f"- {name}（{symbol}）：溢价率 {_fmt_pct(row.get('premium_rate'))}"
 
 
 def _format_focus_live_row(row: dict[str, Any]) -> str:

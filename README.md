@@ -119,6 +119,14 @@ ces collect --date YYYY-MM-DD
 ces collect --batch-size 10 --request-timeout 30 --retries 2 --retry-delay 1
 ```
 
+只采集配置 `focus_etfs` 中的特别关注标的：
+
+```bash
+ces collect --focus-only --config config/config.yaml
+```
+
+默认仍采集全部 active ETF；`--focus-only` 会严格限制为配置中存在于 active ETF 池的标的，关注列表为空或无匹配项时会报错退出，不会退回全量采集。
+
 采集默认幂等：如果某个日期和代码已经有行情，就跳过。需要强制刷新时：
 
 ```bash
@@ -179,8 +187,7 @@ PYTHONPATH=src python3 -m cross_etf_scout.notifications \
 
 ## 每日定时任务
 
-每日脚本会循环采集，直到目标日期的行情数量等于 active ETF 数量。
-它同样是幂等的，已采集完成的数据不会重复采集。
+每日脚本只采集 `focus_etfs` 中的特别关注标的，并循环重试直到这些标的全部有目标日期行情。企业微信日报也只统计和展示特别关注范围内的数据。手工执行 `ces collect` 不带 `--focus-only` 时仍采集全部 active ETF。
 
 脚本当前默认项目路径是：
 

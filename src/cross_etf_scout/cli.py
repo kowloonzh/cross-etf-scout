@@ -87,11 +87,30 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "workwechat-digest":
         quotes = pd.DataFrame(load_quotes(db_path))
+        focus_codes = load_focus_etf_codes(args.config)
+        focus_etfs = _select_focus_etfs(list_active_etfs(db_path), focus_codes)
+        if args.focus_only:
+            if not focus_etfs:
+                print("No active ETFs match focus_etfs in the config.")
+                return 1
+            focus_symbols = {_normalize_symbol(etf["symbol"]) for etf in focus_etfs}
+            if not quotes.empty:
+                quotes = quotes[
+                    quotes["symbol"].map(_normalize_symbol).isin(focus_symbols)
+                ]
         signals = generate_candidate_signals(quotes, args.date)
         replace_daily_signals(db_path, args.date, signals)
-        quote_count = len(load_quotes(db_path, trade_date=args.date))
-        active_count = len(list_active_etfs(db_path))
-        focus_codes = load_focus_etf_codes(args.config)
+        daily_quotes = [
+            quote
+            for quote in load_quotes(db_path, trade_date=args.date)
+            if not args.focus_only
+            or _normalize_symbol(quote["symbol"])
+            in focus_symbols
+        ]
+        quote_count = len(daily_quotes)
+        active_count = (
+            len(focus_etfs) if args.focus_only else len(list_active_etfs(db_path))
+        )
         focus_rows = build_focus_rows(quotes, args.date, focus_codes)
         print(
             format_workwechat_digest(
@@ -100,6 +119,7 @@ def main(argv: list[str] | None = None) -> int:
                 quote_count,
                 active_count,
                 focus_rows=focus_rows,
+                focus_only=args.focus_only,
             )
         )
         return 0
@@ -132,6 +152,12 @@ def _build_parser() -> argparse.ArgumentParser:
     collect_parser.add_argument("--retries", type=int, default=2)
     collect_parser.add_argument("--retry-delay", type=float, default=1.0)
     collect_parser.add_argument("--force", action="store_true")
+    collect_parser.add_argument(
+        "--focus-only",
+        action="store_true",
+        help="collect only active ETFs listed in focus_etfs config",
+    )
+    collect_parser.add_argument("--config", default="config/config.yaml")
 
     report_parser = subparsers.add_parser("report")
     report_parser.add_argument("--date", default=date.today().isoformat())
@@ -146,6 +172,7 @@ def _build_parser() -> argparse.ArgumentParser:
     workwechat_digest_parser = subparsers.add_parser("workwechat-digest")
     workwechat_digest_parser.add_argument("--date", default=date.today().isoformat())
     workwechat_digest_parser.add_argument("--config", default="config/config.yaml")
+    workwechat_digest_parser.add_argument("--focus-only", action="store_true")
 
     focus_live_parser = subparsers.add_parser("focus-live-digest")
     focus_live_parser.add_argument("--date", default=date.today().isoformat())
@@ -168,6 +195,16 @@ def _collect(args: argparse.Namespace, db_path: Path) -> int:
         print("ETF universe is empty. Run ces import-etfs first.")
         return 1
 
+    if args.focus_only:
+        focus_codes = load_focus_etf_codes(args.config)
+        if not focus_codes:
+            print(f"No focus_etfs configured in {args.config}.")
+            return 1
+        etfs = _select_focus_etfs(etfs, focus_codes)
+        if not etfs:
+            print(f"No active ETFs match focus_etfs in {args.config}.")
+            return 1
+
     successes = 0
     failures: list[tuple[str, str]] = []
     names_by_symbol = {etf["symbol"]: etf["name"] for etf in etfs}
@@ -181,6 +218,8 @@ def _collect(args: argparse.Namespace, db_path: Path) -> int:
     if not symbols:
         print(f"Skipped {skipped} already collected quotes.")
         print("Collected 0 quotes, 0 failures.")
+        if args.focus_only:
+            return _focus_collection_status(args, db_path, names_by_symbol)
         return 0
 
     for batch in _chunks(symbols, args.batch_size):
@@ -211,7 +250,31 @@ def _collect(args: argparse.Namespace, db_path: Path) -> int:
     print(f"Collected {successes} quotes, {len(failures)} failures.")
     for symbol, message in failures:
         print(f"- {symbol}: {message}")
+    if args.focus_only:
+        return _focus_collection_status(args, db_path, names_by_symbol)
     return 0 if successes else 1
+
+
+def _focus_collection_status(
+    args: argparse.Namespace, db_path: Path, names_by_symbol: dict[str, str]
+) -> int:
+    expected_symbols = set(names_by_symbol)
+    collected_symbols = {
+        quote["symbol"] for quote in load_quotes(db_path, trade_date=args.date)
+    }
+    missing_symbols = expected_symbols - collected_symbols
+    print(
+        f"Scope: focus-only; quotes available {len(expected_symbols) - len(missing_symbols)}"
+        f"/{len(expected_symbols)} for {args.date}."
+    )
+    for symbol in sorted(missing_symbols):
+        print(f"- {symbol}: no quote saved for {args.date}")
+    return 1 if missing_symbols else 0
+
+
+def _select_focus_etfs(etfs: list[dict], focus_codes: list[str]) -> list[dict]:
+    focus_symbols = {_normalize_symbol(code) for code in focus_codes}
+    return [etf for etf in etfs if _normalize_symbol(etf["symbol"]) in focus_symbols]
 
 
 def _focus_live_digest(args: argparse.Namespace, db_path: Path) -> int:
