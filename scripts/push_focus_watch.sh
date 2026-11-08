@@ -22,13 +22,16 @@ if ! flock -n 9; then
   exit 0
 fi
 
-PYTHONPATH=src python3 -m cross_etf_scout.cli focus-live-digest \
+if ! PYTHONPATH=src python3 -m cross_etf_scout.cli focus-live-digest \
   --date "$TRADE_DATE" \
   --batch-size "${CES_FOCUS_BATCH_SIZE:-10}" \
   --request-timeout "${CES_FOCUS_REQUEST_TIMEOUT:-30}" \
   --retries "${CES_FOCUS_RETRIES:-2}" \
   --retry-delay "${CES_FOCUS_RETRY_DELAY:-1}" \
-  > "$DIGEST_PATH"
+  > "$DIGEST_PATH"; then
+  echo "[$(TZ=Asia/Shanghai date '+%F %T %Z')] stale or incomplete focus quotes; notification skipped"
+  exit 0
+fi
 
 PYTHONPATH=src python3 -m cross_etf_scout.notifications \
   --channel workwechat \

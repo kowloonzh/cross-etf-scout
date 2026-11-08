@@ -303,12 +303,26 @@ def _focus_live_digest(args: argparse.Namespace, db_path: Path) -> int:
         quotes.extend(_fetch_batch(args, batch))
 
     returned_symbols = set()
+    stale_quotes: list[tuple[str, str]] = []
     for quote in quotes:
         symbol = quote["symbol"]
         returned_symbols.add(symbol)
-        quote["trade_date"] = quote.get("trade_date") or args.date
+        source_date = quote.get("trade_date")
+        if source_date != args.date:
+            stale_quotes.append((symbol, str(source_date or "unknown")))
         if not quote.get("name") or quote["name"] == symbol:
             quote["name"] = names_by_symbol.get(symbol, symbol)
+
+    missing_symbols = [symbol for symbol in symbols if symbol not in returned_symbols]
+    if stale_quotes or missing_symbols:
+        print(
+            f"Live quote data is stale or incomplete; notification skipped for {args.date}."
+        )
+        for symbol, source_date in stale_quotes:
+            print(f"- {symbol}: stale quote date {source_date} (expected {args.date})")
+        for symbol in missing_symbols:
+            print(f"- {symbol}: symbol missing from focus response")
+        return 1
 
     ordered_quotes = sorted(
         quotes,
@@ -317,10 +331,7 @@ def _focus_live_digest(args: argparse.Namespace, db_path: Path) -> int:
         else len(symbols),
     )
     print(format_focus_live_digest(ordered_quotes, args.date))
-    missing_symbols = [symbol for symbol in symbols if symbol not in returned_symbols]
-    for symbol in missing_symbols:
-        print(f"- {symbol}: symbol missing from focus response")
-    return 0 if quotes else 1
+    return 0
 
 
 def _fetch_batch(args: argparse.Namespace, batch: list[str]) -> list[dict]:

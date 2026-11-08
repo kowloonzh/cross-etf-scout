@@ -577,6 +577,7 @@ focus_etfs:
         return [
             {
                 "symbol": symbol,
+                "trade_date": "2026-07-21",
                 "name": symbol,
                 "current": 4.743,
                 "percent": 4.59,
@@ -611,9 +612,54 @@ focus_etfs:
     assert calls == [["SH513310", "SZ159501"]]
     assert load_quotes(db_path, trade_date="2026-07-21") == []
     output = capsys.readouterr().out
-    assert "cross-etf-scout 特别关注 2026-07-21" in output
-    assert "SH513310 中韩半导体ETF华泰柏瑞" in output
-    assert "SZ159501 纳指ETF嘉实" in output
+    assert "cross-etf-scout 特别关注溢价率 2026-07-21" in output
+    assert "- 中韩半导体ETF华泰柏瑞（SH513310）：溢价率 7.3%" in output
+    assert "- 纳指ETF嘉实（SZ159501）：溢价率 7.3%" in output
+
+
+def test_cli_focus_live_digest_rejects_quotes_from_previous_trade_date(
+    tmp_path, monkeypatch, capsys
+):
+    db_path = tmp_path / "scout.sqlite"
+    csv_path = tmp_path / "cross_etf.csv"
+    config_path = tmp_path / "config.yaml"
+    with csv_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["证券代码", "交易所", "symbol", "证券名称"])
+        writer.writerow(["159501", "SZ", "SZ159501", "纳指ETF嘉实"])
+    config_path.write_text('focus_etfs:\n  - "159501"\n', encoding="utf-8")
+    init_db(db_path)
+    import_etfs(csv_path, db_path)
+
+    def fetch_stale_quote(*args, **kwargs):
+        return [
+            {
+                "symbol": "SZ159501",
+                "name": "纳指ETF嘉实",
+                "trade_date": "2026-07-17",
+                "premium_rate": 23.7,
+            }
+        ]
+
+    monkeypatch.setattr("cross_etf_scout.cli.fetch_stocks", fetch_stale_quote)
+
+    result = main(
+        [
+            "--db",
+            str(db_path),
+            "focus-live-digest",
+            "--date",
+            "2026-07-21",
+            "--config",
+            str(config_path),
+        ]
+    )
+
+    assert result == 1
+    output = capsys.readouterr().out
+    assert "stale quote" in output
+    assert "2026-07-17" in output
+    assert "特别关注溢价率 2026-07-21" not in output
 
 
 def _write_etf_csv(path):
